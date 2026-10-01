@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoanLens - Loan payment and extra payment payoff</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; background:#101c26; color:#eaf0f5; line-height:1.5; }
+  .wrap { max-width:660px; margin:0 auto; padding:26px 18px 60px; }
+  a { color:#ffb347; } h1 { font-size:28px; } h1 span { color:#ffb347; } .sub { color:#9db0c0; margin:4px 0 18px; }
+  .card { background:#1a2a38; border-radius:14px; padding:16px; margin-bottom:14px; }
+  label { display:block; font-size:13px; color:#9db0c0; margin:10px 0 4px; }
+  .row { display:flex; gap:10px; } .row > div { flex:1; }
+  input { width:100%; padding:11px; border-radius:9px; border:1px solid #3a5063; background:#101c26; color:#eaf0f5; font-size:16px; font-family:inherit; }
+  input.bad { border-color:#e0746a; }
+  .big { font-size:46px; font-weight:800; color:#ffb347; } .lbl { font-size:13px; color:#9db0c0; }
+  .grid { display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; } .grid > div { flex:1; min-width:130px; background:#101c26; border-radius:10px; padding:10px; } .grid b { display:block; font-size:20px; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; } td, th { padding:8px 4px; border-top:1px solid #2b3f50; font-size:14px; text-align:right; } th { color:#9db0c0; font-weight:600; } td:first-child, th:first-child { text-align:left; }
+  .good { color:#7be3a6; } .note { font-size:14px; color:#cdd9e4; margin-top:10px; } h2 { font-size:17px; margin-bottom:8px; } .small { font-size:13px; color:#9db0c0; }
+  .warn { background:#3d2a20; border:1px solid #b9703f; color:#ffddc4; padding:12px; border-radius:10px; margin-top:12px; font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Loan<span>Lens</span></h1>
+  <div class="sub">See the real cost of a loan: payment, total interest, and what an extra payment each month saves.</div>
+  <div class="card">
+    <div class="row"><div><label for="amt">Loan amount ($)</label><input id="amt" inputmode="decimal" value="200000"></div><div><label for="rate">Interest rate (% a year)</label><input id="rate" inputmode="decimal" value="6"></div></div>
+    <div class="row"><div><label for="yrs">Term (years)</label><input id="yrs" inputmode="decimal" value="30"></div><div><label for="extra">Extra each month ($)</label><input id="extra" inputmode="decimal" value="200"></div></div>
+  </div>
+  <div class="card" id="out"></div>
+  <div class="card"><h2>About this</h2><div class="small">Fixed-rate loan: payment = P x i / (1 - (1 + i)^-n), with i the monthly rate and n the number of months. The schedule rounds interest to cents each month. Checked against published figures, such as $200,000 at 6% over 30 years = $1,199.10 (<a href="https://www.finatopia.com/calculator/loan/mortgage/200000/600">example</a>). Payment shown is principal and interest only: taxes, insurance and fees are not included. An estimate, not financial advice. Runs in your browser.</div></div>
+</div>
+<script src="engine.js"></script>
+<script>
+var $ = function (i) { return document.getElementById(i); };
+function num(id) { var v = $(id).value.replace(/[$,\s]/g, ''); var ok = /^\d*\.?\d+$/.test(v); $(id).className = ok || id === 'extra' && v === '' ? '' : 'bad'; return ok ? parseFloat(v) : (id === 'extra' && v === '' ? 0 : null); }
+function render() {
+  var P = num('amt'), r = num('rate'), y = num('yrs'), x = num('extra');
+  if (P == null || r == null || y == null || x == null || P <= 0 || y <= 0 || y > 50 || r > 50) { $('out').innerHTML = '<div class="warn" id="err">Enter a loan amount above 0, a rate from 0 to 50, a term up to 50 years, and an extra amount of 0 or more.</div>'; return; }
+  var n = Math.round(y * 12), c = Loan.compare(P, r, n, x), b = c.base, f = c.fast, h = '';
+  var first = b.rows[0];
+  h += '<div class="lbl">Monthly payment (principal and interest)</div><div class="big" id="pay">' + Loan.money(b.payment) + '</div>';
+  h += '<div class="grid"><div><span class="lbl">Total interest</span><b id="int">' + Loan.money(b.totalInterest, 0) + '</b></div><div><span class="lbl">Total paid</span><b>' + Loan.money(b.totalPaid, 0) + '</b></div><div><span class="lbl">Payment 1 is interest</span><b id="first">' + Math.round(first.interest / b.payment * 100) + '%</b></div></div>';
+  if (x > 0) {
+    h += '<h2 style="margin-top:18px">With ' + Loan.money(x, 0) + ' extra each month</h2><div class="grid"><div><span class="lbl">Paid off in</span><b id="fastspan">' + Loan.span(f.months) + '</b></div><div><span class="lbl">Time saved</span><b class="good" id="saved">' + Loan.span(c.monthsSaved) + '</b></div><div><span class="lbl">Interest saved</span><b class="good" id="isaved">' + Loan.money(c.interestSaved, 0) + '</b></div></div>';
+    if (!f.ok) h += '<div class="warn">The payment does not cover the interest, so the balance never reaches zero.</div>';
+  }
+  var s = Loan.sensitivity(P, r, n, [-1, -0.5, 0, 0.5, 1]);
+  h += '<h2 style="margin-top:18px">If the rate were different</h2><table id="sens"><tr><th>Rate</th><th>Payment</th><th>Change</th><th>Interest over term</th></tr>';
+  s.forEach(function (q) { h += '<tr' + (q.delta === 0 ? ' style="color:#ffb347;font-weight:700"' : '') + '><td>' + q.rate.toFixed(2) + '%</td><td>' + Loan.money(q.payment) + '</td><td>' + (q.delta === 0 ? '-' : (q.delta > 0 ? '+' : '') + Loan.money(q.delta)) + '</td><td>' + Loan.money(q.payment * n - P, 0) + '</td></tr>'; });
+  h += '</table>';
+  $('out').innerHTML = h;
+}
+['amt', 'rate', 'yrs', 'extra'].forEach(function (id) { $(id).oninput = render; });
+render();
+</script>
+</body>
+</html>
